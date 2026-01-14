@@ -387,9 +387,6 @@ class DocumentManager {
             console.log('[DOCUMENT_MANAGER] ========== UPLOAD FINALIZADO ==========');
         }
     }
-            this.showUploadProgress(false);
-        }
-    }
 
     showUploadProgress(show) {
         const button = document.querySelector('#document-upload-form button[type="submit"]');
