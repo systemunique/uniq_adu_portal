@@ -8,6 +8,7 @@ class DocumentManager {
         this.processRefUnique = processRefUnique;
         this.documents = [];
         this.userRole = null;
+        this.eventListeners = []; // Rastrear event listeners para limpeza
         this.init();
     }
 
@@ -17,6 +18,44 @@ class DocumentManager {
         this.setupUploadSection();
         this.loadDocuments();
         this.setupEventListeners();
+    }
+
+    /**
+     * Atualiza o processo atual sem recriar a instância
+     * Evita duplicação de event listeners
+     */
+    updateProcess(newProcessRefUnique) {
+        console.log('[DOCUMENT_MANAGER] Atualizando processo de', this.processRefUnique, 'para', newProcessRefUnique);
+        this.processRefUnique = newProcessRefUnique;
+        this.documents = [];
+        this.loadDocuments();
+    }
+
+    /**
+     * Destrói a instância removendo todos os event listeners
+     */
+    destroy() {
+        console.log('[DOCUMENT_MANAGER] Destruindo instância para processo:', this.processRefUnique);
+        
+        // Remover todos os event listeners rastreados
+        this.eventListeners.forEach(({ element, event, handler }) => {
+            if (element) {
+                element.removeEventListener(event, handler);
+            }
+        });
+        
+        this.eventListeners = [];
+        this.documents = [];
+    }
+
+    /**
+     * Helper para adicionar event listener rastreado
+     */
+    addTrackedListener(element, event, handler) {
+        if (element) {
+            element.addEventListener(event, handler);
+            this.eventListeners.push({ element, event, handler });
+        }
     }
 
     getUserRole() {
@@ -37,44 +76,53 @@ class DocumentManager {
     }
 
     setupEventListeners() {
+        console.log('[DOCUMENT_MANAGER] Configurando event listeners');
+        
         // Botão de upload (TODAS as roles podem fazer upload)
         const uploadBtn = document.getElementById('upload-document-btn');
         if (uploadBtn && ['admin', 'interno_unique', 'cliente_unique'].includes(this.userRole)) {
-            uploadBtn.addEventListener('click', () => this.showUploadModal());
+            this.addTrackedListener(uploadBtn, 'click', () => this.showUploadModal());
         }
 
-        // Form de upload
+        // Form de upload - CRÍTICO: usar bound function para manter contexto
         const uploadForm = document.getElementById('document-upload-form');
         if (uploadForm) {
-            uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
+            this.handleUploadBound = (e) => this.handleUpload(e);
+            this.addTrackedListener(uploadForm, 'submit', this.handleUploadBound);
         }
 
         // Fechar modal de upload
         const closeUploadBtn = document.getElementById('close-upload-modal');
         if (closeUploadBtn) {
-            closeUploadBtn.addEventListener('click', () => this.hideUploadModal());
+            this.addTrackedListener(closeUploadBtn, 'click', () => this.hideUploadModal());
+        }
+
+        // Cancelar upload
+        const cancelUploadBtn = document.getElementById('cancel-upload');
+        if (cancelUploadBtn) {
+            this.addTrackedListener(cancelUploadBtn, 'click', () => this.hideUploadModal());
         }
 
         // Preview de arquivo
         const fileInput = document.getElementById('document-file');
         if (fileInput) {
-            fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+            this.addTrackedListener(fileInput, 'change', (e) => this.handleFileSelect(e));
         }
 
         // Drag & Drop para upload
         const fileInputLabel = document.querySelector('.file-input-label');
         if (fileInputLabel && this.canUpload()) {
-            fileInputLabel.addEventListener('dragover', (e) => {
+            this.addTrackedListener(fileInputLabel, 'dragover', (e) => {
                 e.preventDefault();
                 fileInputLabel.classList.add('drag-over');
             });
 
-            fileInputLabel.addEventListener('dragleave', (e) => {
+            this.addTrackedListener(fileInputLabel, 'dragleave', (e) => {
                 e.preventDefault();
                 fileInputLabel.classList.remove('drag-over');
             });
 
-            fileInputLabel.addEventListener('drop', (e) => {
+            this.addTrackedListener(fileInputLabel, 'drop', (e) => {
                 e.preventDefault();
                 fileInputLabel.classList.remove('drag-over');
 
@@ -292,12 +340,23 @@ class DocumentManager {
 
     async handleUpload(event) {
         event.preventDefault();
+        
+        console.log('[DOCUMENT_MANAGER] ========== UPLOAD INICIADO ==========');
+        console.log('[DOCUMENT_MANAGER] Processo atual:', this.processRefUnique);
+        console.log('[DOCUMENT_MANAGER] Timestamp:', new Date().toISOString());
 
         const form = event.target;
         const formData = new FormData(form);
 
-        // Adicionar ref_unique
+        // Adicionar ref_unique - VALIDAÇÃO CRÍTICA
+        if (!this.processRefUnique) {
+            console.error('[DOCUMENT_MANAGER] ❌ ERRO: processRefUnique não definido!');
+            this.showError('Erro: Processo não identificado. Feche e abra o modal novamente.');
+            return;
+        }
+
         formData.append('ref_unique', this.processRefUnique);
+        console.log('[DOCUMENT_MANAGER] ref_unique enviado:', this.processRefUnique);
 
         try {
             this.showUploadProgress(true);
@@ -308,18 +367,26 @@ class DocumentManager {
             });
 
             const result = await response.json();
+            
+            console.log('[DOCUMENT_MANAGER] Resposta do servidor:', result);
 
             if (result.success) {
+                console.log('[DOCUMENT_MANAGER] ✅ Upload concluído com sucesso para processo:', this.processRefUnique);
                 this.showSuccess('Documento enviado com sucesso!');
                 this.hideUploadModal();
                 await this.loadDocuments(); // Recarregar lista
             } else {
+                console.error('[DOCUMENT_MANAGER] ❌ Erro no upload:', result.error);
                 this.showError('Erro no upload: ' + result.error);
             }
         } catch (error) {
-            console.error('[DOCUMENT_MANAGER] Erro no upload:', error);
+            console.error('[DOCUMENT_MANAGER] ❌ Erro de conexão:', error);
             this.showError('Erro de conexão durante o upload');
         } finally {
+            this.showUploadProgress(false);
+            console.log('[DOCUMENT_MANAGER] ========== UPLOAD FINALIZADO ==========');
+        }
+    }
             this.showUploadProgress(false);
         }
     }
@@ -487,7 +554,22 @@ function deleteDocument(documentId) {
 
 // Função para inicializar gerenciador no modal
 function initializeDocumentManager(processRefUnique) {
-    console.log('[DOCUMENT_MANAGER] Inicializando para processo:', processRefUnique);
-    window.documentManager = new DocumentManager(processRefUnique);
+    console.log('[DOCUMENT_MANAGER] ========== INICIALIZAÇÃO ==========');
+    console.log('[DOCUMENT_MANAGER] Processo solicitado:', processRefUnique);
+    console.log('[DOCUMENT_MANAGER] Instância existente:', !!window.documentManager);
+    
+    // Se já existe uma instância, apenas atualizar o processo
+    if (window.documentManager) {
+        console.log('[DOCUMENT_MANAGER] Reutilizando instância existente');
+        console.log('[DOCUMENT_MANAGER] Processo anterior:', window.documentManager.processRefUnique);
+        window.documentManager.updateProcess(processRefUnique);
+    } else {
+        // Criar nova instância apenas se não existir
+        console.log('[DOCUMENT_MANAGER] Criando nova instância');
+        window.documentManager = new DocumentManager(processRefUnique);
+    }
+    
+    console.log('[DOCUMENT_MANAGER] Processo atual:', window.documentManager.processRefUnique);
+    console.log('[DOCUMENT_MANAGER] ========== FIM INICIALIZAÇÃO ==========');
     return window.documentManager;
 }
