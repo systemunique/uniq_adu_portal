@@ -3692,16 +3692,25 @@ function updateDocumentsList(operation) {
 
     // Verificar se DocumentManager está disponível
     if (typeof DocumentManager === 'undefined') {
-        console.error('DocumentManager não carregado');
-        documentsList.innerHTML = '<p class="no-documents">Sistema de documentos não disponível</p>';
+        console.error('[DASHBOARD_EXECUTIVO] DocumentManager class não carregada');
+        documentsList.innerHTML = '<p class="no-documents">Sistema de documentos não disponível. Verifique se document-manager.js foi incluído.</p>';
         return;
     }
 
     try {
-        // Inicializar DocumentManager para este processo e armazenar na variável global
-        // O DocumentManager já chama loadDocuments() automaticamente no init()
-        window.documentManager = new DocumentManager(refUnique);
-        console.log('[DASHBOARD_EXECUTIVO] DocumentManager inicializado e armazenado em window.documentManager');
+        console.log('[DASHBOARD_EXECUTIVO] Inicializando DocumentManager para processo:', refUnique);
+        console.log('[DASHBOARD_EXECUTIVO] Instância existente:', !!window.documentManager);
+        
+        // Reutilizar instância existente ou criar nova
+        if (window.documentManager) {
+            console.log('[DASHBOARD_EXECUTIVO] Reutilizando instância existente');
+            window.documentManager.updateProcess(refUnique);
+        } else {
+            console.log('[DASHBOARD_EXECUTIVO] Criando nova instância do DocumentManager');
+            window.documentManager = new DocumentManager(refUnique);
+        }
+        
+        console.log('[DASHBOARD_EXECUTIVO] DocumentManager pronto para processo:', window.documentManager.processRefUnique);
 
         // Configurar botão "Baixar Todos"
         setupDownloadAllButton();
